@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import jwt
 import models, schemas
 from database import engine, get_db
+import os  # เพิ่ม import os
 
 # สร้างฐานข้อมูล
 models.Base.metadata.create_all(bind=engine)
@@ -23,8 +24,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ตั้งค่าความปลอดภัย
-SECRET_KEY = "your-secret-key"
+# ตั้งค่าความปลอดภัย - ใช้ environment variables
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
