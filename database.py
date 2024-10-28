@@ -1,14 +1,23 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./sql_app.db"
+# ใช้ DATABASE_URL จาก environment variable
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
+# Fix PostgreSQL URL format
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# ถ้าไม่มี DATABASE_URL ให้ใช้ SQLite เป็น fallback
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///./sql_app.db"
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
 def get_db():
