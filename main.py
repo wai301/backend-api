@@ -201,30 +201,26 @@ async def update_profile(
 # Chat Routes
 @app.post("/start-chat")
 async def start_chat(school: str, current_user: models.User = Depends(get_current_user)):
-    print(f"User {current_user.username} from {school} is looking for chat")  # เพิ่ม log
+    print(f"Starting chat for {current_user.username} from {school}")  # เพิ่ม log
     update_user_status(current_user.id)
 
-    # เช็คว่าไม่ได้อยู่ในแชทอยู่แล้ว
+    # เช็คว่าผู้ใช้ไม่ได้อยู่ในแชทอื่น
     for chat_id, chat in active_chats.items():
         if current_user.id in [chat['user1'].id, chat['user2'].id]:
-            print(f"User {current_user.username} is already in chat {chat_id}")
             raise HTTPException(status_code=400, detail="You are already in a chat")
 
     # ลบตัวเองจาก waiting list ถ้ามี
     waiting_users[:] = [u for u in waiting_users if u['user'].id != current_user.id]
 
-    # แสดงรายชื่อคนที่รออยู่
-    print(f"Current waiting users: {[(u['user'].username, u['school']) for u in waiting_users]}")
-
     # หาคู่สนทนาที่อยู่โรงเรียนเดียวกัน
-    available_users = [
-        u for u in waiting_users 
-        if u['school'] == school 
-        and u['user'].id != current_user.id 
-        and is_user_online(u['user'].id)
-    ]
+    available_users = []
+    for waiting_user in waiting_users:
+        if (waiting_user['school'] == school and 
+            waiting_user['user'].id != current_user.id and 
+            is_user_online(waiting_user['user'].id)):
+            available_users.append(waiting_user)
 
-    print(f"Available users for matching: {[u['user'].username for u in available_users]}")
+    print(f"Available users for {school}: {[u['user'].username for u in available_users]}")
 
     if available_users:
         # สุ่มเลือกคนที่จะคุยด้วย
@@ -252,12 +248,12 @@ async def start_chat(school: str, current_user: models.User = Depends(get_curren
             }
         }
 
-    # ถ้าไม่เจอคู่สนทนา ใส่เข้า waiting list
+    # ถ้ายังไม่มีคน ให้เข้าคิวรอ
+    print(f"No match found, {current_user.username} waiting")
     waiting_users.append({
         'user': current_user,
         'school': school
     })
-    print(f"Added {current_user.username} to waiting list")
     return {"status": "waiting"}
 
 @app.post("/send-message/{chat_id}")
@@ -287,7 +283,7 @@ async def send_message(
     }
     chat['messages'].append(new_message)
 
-    print(f"Message sent in chat {chat_id}: {message}")  # เพิ่ม log
+    print(f"Message sent in chat {chat_id}: {message}")
     return {
         "status": "sent",
         "message": new_message
@@ -331,7 +327,7 @@ async def leave_chat(
     if current_user.id not in [chat['user1'].id, chat['user2'].id]:
         raise HTTPException(status_code=403, detail="You are not in this chat")
 
-    print(f"User {current_user.username} left chat {chat_id}")  # เพิ่ม log
+    print(f"User {current_user.username} left chat {chat_id}")
     del active_chats[chat_id]
     return {"status": "left"}
 
@@ -358,7 +354,7 @@ async def get_waiting_status(current_user: models.User = Depends(get_current_use
     
     return {"status": "not_waiting"}
 
-# Debug endpoint
+# Debug Routes
 @app.get("/debug/waiting-users")
 async def get_waiting_users_debug(current_user: models.User = Depends(get_current_user)):
     return {
@@ -403,7 +399,7 @@ async def get_online_users(
         "online_users": online_count
     }
 
-# เพิ่ม endpoint สำหรับตรวจสอบสถานะระบบ
+# System Status Routes
 @app.get("/system-status")
 async def get_system_status(current_user: models.User = Depends(get_current_user)):
     return {
@@ -413,13 +409,21 @@ async def get_system_status(current_user: models.User = Depends(get_current_user
         "current_time": datetime.now().isoformat()
     }
 
-# เพิ่ม endpoint สำหรับรีเซ็ตการแชท (สำหรับ debug)
+# Reset Routes (Debug Only)
 @app.post("/debug/reset-chat")
 async def reset_chat(current_user: models.User = Depends(get_current_user)):
-    # เช็คว่าเป็น admin หรือไม่ (อาจเพิ่มการตรวจสอบเพิ่มเติม)
     waiting_users.clear()
     active_chats.clear()
     return {"status": "reset_complete"}
+
+# Error Handler
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return {
+        "status": "error",
+        "message": exc.detail,
+        "status_code": exc.status_code
+    }
 
 if __name__ == "__main__":
     import uvicorn
