@@ -1,4 +1,3 @@
-# schemas.py
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -27,6 +26,20 @@ class User(UserBase):
 
     class Config:
         from_attributes = True  # เดิมใช้ orm_mode = True ในเวอร์ชั่นใหม่ใช้ from_attributes
+
+# Profile Schemas
+class Profile(BaseModel):
+    id: int
+    username: str
+    email: str
+    school: str
+    
+    class Config:
+        from_attributes = True
+
+class ProfileUpdate(BaseModel):
+    email: Optional[str] = None
+    school: Optional[str] = None
 
 # Token Schemas
 class Token(BaseModel):

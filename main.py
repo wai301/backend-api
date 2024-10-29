@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
+# main.py
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -107,7 +108,6 @@ async def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
         db.refresh(db_user)
         print(f"User registered successfully: {db_user.username}")
         
-        # อัพเดทสถานะออนไลน์เมื่อสมัครสมาชิก
         update_user_status(db_user.id)
         return db_user
 
@@ -152,7 +152,11 @@ async def get_profile(current_user: models.User = Depends(get_current_user)):
     }
 
 @app.post("/profile/update")
-async def update_profile(profile_update: schemas.ProfileUpdate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def update_profile(
+    profile_update: schemas.ProfileUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     if profile_update.email:
         db_user = db.query(models.User).filter(models.User.email == profile_update.email).first()
         if db_user and db_user.id != current_user.id:
@@ -205,7 +209,11 @@ async def start_chat(school: str, current_user: models.User = Depends(get_curren
     return {"status": "waiting"}
 
 @app.post("/send-message/{chat_id}")
-async def send_message(chat_id: str, message: str, current_user: models.User = Depends(get_current_user)):
+async def send_message(
+    chat_id: str,
+    message: str,
+    current_user: models.User = Depends(get_current_user)
+):
     update_user_status(current_user.id)
 
     if chat_id not in active_chats:
@@ -233,7 +241,10 @@ async def send_message(chat_id: str, message: str, current_user: models.User = D
     }
 
 @app.get("/chat-messages/{chat_id}")
-async def get_messages(chat_id: str, current_user: models.User = Depends(get_current_user)):
+async def get_messages(
+    chat_id: str,
+    current_user: models.User = Depends(get_current_user)
+):
     update_user_status(current_user.id)
 
     if chat_id not in active_chats:
@@ -256,7 +267,10 @@ async def get_messages(chat_id: str, current_user: models.User = Depends(get_cur
     }
 
 @app.post("/leave-chat/{chat_id}")
-async def leave_chat(chat_id: str, current_user: models.User = Depends(get_current_user)):
+async def leave_chat(
+    chat_id: str,
+    current_user: models.User = Depends(get_current_user)
+):
     if chat_id not in active_chats:
         raise HTTPException(status_code=404, detail="Chat not found")
 
@@ -297,7 +311,11 @@ async def update_online_status(current_user: models.User = Depends(get_current_u
     return {"status": "updated"}
 
 @app.get("/online-users/{school}")
-async def get_online_users(school: str, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_online_users(
+    school: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     online_count = 0
     users = db.query(models.User).filter(models.User.school == school).all()
     for user in users:
