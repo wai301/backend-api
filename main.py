@@ -1,19 +1,24 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from typing import List, Optional
 from datetime import datetime, timedelta
 import jwt
+import os
 import models, schemas
 from database import engine, get_db
-import os  # เพิ่ม import os
+from pydantic import BaseModel, Json
 
 # สร้างฐานข้อมูล
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+# Serve static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS
 app.add_middleware(
@@ -24,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ตั้งค่าความปลอดภัย - ใช้ environment variables
+# ตั้งค่าความปลอดภัย
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -39,6 +44,25 @@ active_chats = {}
 # เก็บข้อมูลผู้ใช้ที่ออนไลน์
 online_users = {}
 
+# Schemas สำหรับ Profile
+class ProfileUpdate(BaseModel):
+    displayName: Optional[str] = None
+    bio: Optional[str] = None
+    interests: List[str] = []
+
+class ProfileStats(BaseModel):
+    chatCount: int = 0
+    friendCount: int = 0
+    activeTime: int = 0
+
+class Profile(BaseModel):
+    displayName: Optional[str]
+    school: str
+    bio: Optional[str]
+    interests: List[str] = []
+    stats: ProfileStats
+    picture_url: Optional[str] = None
+
 # ฟังก์ชันเช็คสถานะออนไลน์
 def update_user_status(user_id: int):
     online_users[user_id] = datetime.now()
@@ -46,7 +70,6 @@ def update_user_status(user_id: int):
 def is_user_online(user_id: int) -> bool:
     if user_id not in online_users:
         return False
-    # ถ้าไม่มีการอัพเดทสถานะเกิน 5 นาที ถือว่าออฟไลน์
     return datetime.now() - online_users[user_id] < timedelta(minutes=5)
 
 # ฟังก์ชันสร้าง token
@@ -79,7 +102,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     return user
 
-# หน้าแรก
+# Routes
+
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Server is running"}
@@ -132,7 +156,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             detail="Incorrect username or password"
         )
 
-    # อัพเดทสถานะออนไลน์เมื่อล็อกอิน
     update_user_status(user.id)
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -142,45 +165,98 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-# อัพเดทสถานะออนไลน์
-@app.post("/update-status")
-async def update_online_status(current_user: models.User = Depends(get_current_user)):
-    update_user_status(current_user.id)
-    return {"status": "updated"}
+# Profile Routes
+@app.get("/profile", response_model=Profile)
+async def get_profile(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
+    
+    if not profile:
+        profile = models.UserProfile(
+            user_id=current_user.id,
+            display_name=current_user.username,
+            interests=[]
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
 
-# ดูจำนวนคนออนไลน์
-@app.get("/online-users/{school}")
-async def get_online_users(
-    school: str,
+    return {
+        "displayName": profile.display_name,
+        "school": current_user.school,
+        "bio": profile.bio,
+        "interests": profile.interests,
+        "stats": {
+            "chatCount": profile.chat_count,
+            "friendCount": profile.friend_count,
+            "activeTime": profile.active_time
+        },
+        "picture_url": profile.picture_url
+    }
+
+@app.post("/profile/update")
+async def update_profile(
+    profile_update: ProfileUpdate,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    online_count = 0
-    users = db.query(models.User).filter(models.User.school == school).all()
-    for user in users:
-        if is_user_online(user.id):
-            online_count += 1
+    profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
+    
+    if not profile:
+        profile = models.UserProfile(user_id=current_user.id)
+        db.add(profile)
+    
+    if profile_update.displayName is not None:
+        profile.display_name = profile_update.displayName
+    if profile_update.bio is not None:
+        profile.bio = profile_update.bio
+    profile.interests = profile_update.interests
 
-    return {
-        "school": school,
-        "online_users": online_count
-    }
+    db.commit()
+    return {"status": "success"}
 
-# เริ่มแชท
+@app.post("/profile/picture")
+async def update_profile_picture(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    try:
+        filename = f"user_{current_user.id}_{int(datetime.now().timestamp())}{os.path.splitext(file.filename)[1]}"
+        
+        UPLOAD_DIR = "static/uploads"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        
+        with open(file_path, "wb+") as file_object:
+            file_object.write(file.file.read())
+        
+        profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
+        if not profile:
+            profile = models.UserProfile(user_id=current_user.id)
+            db.add(profile)
+        
+        profile.picture_url = f"/static/uploads/{filename}"
+        db.commit()
+
+        return {"url": profile.picture_url}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Chat Routes
 @app.post("/start-chat")
 async def start_chat(school: str, current_user: models.User = Depends(get_current_user)):
-    # อัพเดทสถานะออนไลน์
     update_user_status(current_user.id)
 
-    # เช็คว่าผู้ใช้อยู่ในการแชทอื่นหรือไม่
     for chat_id, chat in active_chats.items():
         if current_user.id in [chat['user1'].id, chat['user2'].id]:
             raise HTTPException(status_code=400, detail="You are already in a chat")
 
-    # ลบผู้ใช้จาก waiting list ถ้ามี
     waiting_users[:] = [u for u in waiting_users if u['user'].id != current_user.id]
 
-    # หาคู่สนทนาที่ออนไลน์
     for waiting_user in waiting_users:
         if (waiting_user['school'] == school and 
             waiting_user['user'].id != current_user.id and 
@@ -205,21 +281,18 @@ async def start_chat(school: str, current_user: models.User = Depends(get_curren
                 }
             }
 
-    # ถ้าไม่เจอคู่สนทนาที่ออนไลน์
     waiting_users.append({
         'user': current_user,
         'school': school
     })
     return {"status": "waiting"}
 
-# ส่งข้อความ
 @app.post("/send-message/{chat_id}")
 async def send_message(
     chat_id: str,
     message: str,
     current_user: models.User = Depends(get_current_user)
 ):
-    # อัพเดทสถานะออนไลน์
     update_user_status(current_user.id)
 
     if chat_id not in active_chats:
@@ -229,7 +302,6 @@ async def send_message(
     if current_user.id not in [chat['user1'].id, chat['user2'].id]:
         raise HTTPException(status_code=403, detail="You are not in this chat")
 
-    # เช็คว่าคู่สนทนายังออนไลน์อยู่ไหม
     partner = chat['user2'] if current_user.id == chat['user1'].id else chat['user1']
     if not is_user_online(partner.id):
         raise HTTPException(status_code=400, detail="Partner is offline")
@@ -247,13 +319,11 @@ async def send_message(
         "message": new_message
     }
 
-# ดูข้อความในแชท
 @app.get("/chat-messages/{chat_id}")
 async def get_messages(
     chat_id: str,
     current_user: models.User = Depends(get_current_user)
 ):
-    # อัพเดทสถานะออนไลน์
     update_user_status(current_user.id)
 
     if chat_id not in active_chats:
@@ -275,7 +345,6 @@ async def get_messages(
         }
     }
 
-# ออกจากแชท
 @app.post("/leave-chat/{chat_id}")
 async def leave_chat(
     chat_id: str,
@@ -291,17 +360,14 @@ async def leave_chat(
     del active_chats[chat_id]
     return {"status": "left"}
 
-# เช็คสถานะการรอ
 @app.get("/waiting-status")
 async def get_waiting_status(current_user: models.User = Depends(get_current_user)):
-    # อัพเดทสถานะออนไลน์
     update_user_status(current_user.id)
 
     for user in waiting_users:
         if user['user'].id == current_user.id:
             return {"status": "waiting", "school": user['school']}
     
-    # เช็คว่าอยู่ในแชทไหม
     for chat_id, chat in active_chats.items():
         if current_user.id in [chat['user1'].id, chat['user2'].id]:
             partner = chat['user2'] if current_user.id == chat['user1'].id else chat['user1']
@@ -317,7 +383,30 @@ async def get_waiting_status(current_user: models.User = Depends(get_current_use
     
     return {"status": "not_waiting"}
 
-# รายงานผู้ใช้
+# Online Status Routes
+@app.post("/update-status")
+async def update_online_status(current_user: models.User = Depends(get_current_user)):
+    update_user_status(current_user.id)
+    return {"status": "updated"}
+
+@app.get("/online-users/{school}")
+async def get_online_users(
+    school: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    online_count = 0
+    users = db.query(models.User).filter(models.User.school == school).all()
+    for user in users:
+        if is_user_online(user.id):
+            online_count += 1
+
+    return {
+        "school": school,
+        "online_users": online_count
+    }
+
+# Report Routes
 @app.post("/report-user/{reported_username}")
 async def report_user(
     reported_username: str,
@@ -329,7 +418,6 @@ async def report_user(
     if not reported_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # บันทึกการรายงาน
     report = models.Report(
         reporter_id=current_user.id,
         reported_id=reported_user.id,
@@ -340,6 +428,28 @@ async def report_user(
     db.commit()
 
     return {"status": "reported"}
+
+# Profile Stats Update Route
+@app.post("/profile/stats/update")
+async def update_stats(
+    chatCount: Optional[int] = None,
+    activeTime: Optional[int] = None,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
+    
+    if not profile:
+        profile = models.UserProfile(user_id=current_user.id)
+        db.add(profile)
+    
+    if chatCount is not None:
+        profile.chat_count = chatCount
+    if activeTime is not None:
+        profile.active_time = activeTime
+    
+    db.commit()
+    return {"status": "success"}
 
 if __name__ == "__main__":
     import uvicorn
