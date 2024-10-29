@@ -157,15 +157,43 @@ async def update_profile(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if profile_update.email:
-        db_user = db.query(models.User).filter(models.User.email == profile_update.email).first()
-        if db_user and db_user.id != current_user.id:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        current_user.email = profile_update.email
-    if profile_update.school:
-        current_user.school = profile_update.school
-    db.commit()
-    return {"status": "success"}
+    try:
+        if profile_update.email:
+            # เช็คว่ามีคนใช้อีเมลนี้หรือยัง
+            existing_user = db.query(models.User).filter(
+                models.User.email == profile_update.email,
+                models.User.id != current_user.id
+            ).first()
+            if existing_user:
+                raise HTTPException(
+                    status_code=400,
+                    detail="อีเมลนี้ถูกใช้งานแล้ว"
+                )
+            current_user.email = profile_update.email
+            
+        if profile_update.school:
+            current_user.school = profile_update.school
+            
+        db.commit()
+        db.refresh(current_user)
+        
+        return {
+            "status": "success",
+            "message": "อัพเดทข้อมูลสำเร็จ",
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "school": current_user.school
+            }
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 # Chat Routes
 @app.post("/start-chat")

@@ -40,6 +40,18 @@ class Profile(BaseModel):
 class ProfileUpdate(BaseModel):
     email: Optional[str] = None
     school: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class Profile(BaseModel):
+    id: int
+    username: str
+    email: str
+    school: str
+    
+    class Config:
+        from_attributes = True
 
 # Token Schemas
 class Token(BaseModel):
