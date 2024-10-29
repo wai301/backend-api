@@ -8,6 +8,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 import jwt
 import os
+import random  # เพิ่ม import random
 import models, schemas
 from database import engine, get_db
 
@@ -43,11 +44,14 @@ online_users = {}
 # ฟังก์ชันเช็คสถานะออนไลน์
 def update_user_status(user_id: int):
     online_users[user_id] = datetime.now()
+    print(f"Updated online status for user {user_id}")  # เพิ่ม log
 
 def is_user_online(user_id: int) -> bool:
     if user_id not in online_users:
         return False
-    return datetime.now() - online_users[user_id] < timedelta(minutes=5)
+    is_online = datetime.now() - online_users[user_id] < timedelta(minutes=5)
+    print(f"User {user_id} online status: {is_online}")  # เพิ่ม log
+    return is_online
 
 # ฟังก์ชันสร้าง token
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -80,7 +84,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     return user
 
 # Routes
-
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Server is running"}
@@ -133,6 +136,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
         )
 
     update_user_status(user.id)
+    print(f"User logged in: {user.username}")  # เพิ่ม log
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -159,7 +163,6 @@ async def update_profile(
 ):
     try:
         if profile_update.email:
-            # เช็คว่ามีคนใช้อีเมลนี้หรือยัง
             existing_user = db.query(models.User).filter(
                 models.User.email == profile_update.email,
                 models.User.id != current_user.id
@@ -198,42 +201,63 @@ async def update_profile(
 # Chat Routes
 @app.post("/start-chat")
 async def start_chat(school: str, current_user: models.User = Depends(get_current_user)):
+    print(f"User {current_user.username} from {school} is looking for chat")  # เพิ่ม log
     update_user_status(current_user.id)
 
+    # เช็คว่าไม่ได้อยู่ในแชทอยู่แล้ว
     for chat_id, chat in active_chats.items():
         if current_user.id in [chat['user1'].id, chat['user2'].id]:
+            print(f"User {current_user.username} is already in chat {chat_id}")
             raise HTTPException(status_code=400, detail="You are already in a chat")
 
+    # ลบตัวเองจาก waiting list ถ้ามี
     waiting_users[:] = [u for u in waiting_users if u['user'].id != current_user.id]
 
-    for waiting_user in waiting_users:
-        if (waiting_user['school'] == school and 
-            waiting_user['user'].id != current_user.id and 
-            is_user_online(waiting_user['user'].id)):
-            
-            chat_id = f"{current_user.id}-{waiting_user['user'].id}"
-            active_chats[chat_id] = {
-                'user1': current_user,
-                'user2': waiting_user['user'],
-                'school': school,
-                'messages': [],
-                'started_at': datetime.now()
-            }
-            waiting_users.remove(waiting_user)
-            return {
-                "status": "matched",
-                "chat_id": chat_id,
-                "partner": {
-                    "username": waiting_user['user'].username,
-                    "school": school,
-                    "online": True
-                }
-            }
+    # แสดงรายชื่อคนที่รออยู่
+    print(f"Current waiting users: {[(u['user'].username, u['school']) for u in waiting_users]}")
 
+    # หาคู่สนทนาที่อยู่โรงเรียนเดียวกัน
+    available_users = [
+        u for u in waiting_users 
+        if u['school'] == school 
+        and u['user'].id != current_user.id 
+        and is_user_online(u['user'].id)
+    ]
+
+    print(f"Available users for matching: {[u['user'].username for u in available_users]}")
+
+    if available_users:
+        # สุ่มเลือกคนที่จะคุยด้วย
+        waiting_user = random.choice(available_users)
+        chat_id = f"{current_user.id}-{waiting_user['user'].id}"
+        
+        print(f"Matched: {current_user.username} with {waiting_user['user'].username}")
+        
+        active_chats[chat_id] = {
+            'user1': current_user,
+            'user2': waiting_user['user'],
+            'school': school,
+            'messages': [],
+            'started_at': datetime.now()
+        }
+        waiting_users.remove(waiting_user)
+        
+        return {
+            "status": "matched",
+            "chat_id": chat_id,
+            "partner": {
+                "username": waiting_user['user'].username,
+                "school": school,
+                "online": True
+            }
+        }
+
+    # ถ้าไม่เจอคู่สนทนา ใส่เข้า waiting list
     waiting_users.append({
         'user': current_user,
         'school': school
     })
+    print(f"Added {current_user.username} to waiting list")
     return {"status": "waiting"}
 
 @app.post("/send-message/{chat_id}")
@@ -263,6 +287,7 @@ async def send_message(
     }
     chat['messages'].append(new_message)
 
+    print(f"Message sent in chat {chat_id}: {message}")  # เพิ่ม log
     return {
         "status": "sent",
         "message": new_message
@@ -306,6 +331,7 @@ async def leave_chat(
     if current_user.id not in [chat['user1'].id, chat['user2'].id]:
         raise HTTPException(status_code=403, detail="You are not in this chat")
 
+    print(f"User {current_user.username} left chat {chat_id}")  # เพิ่ม log
     del active_chats[chat_id]
     return {"status": "left"}
 
@@ -332,6 +358,28 @@ async def get_waiting_status(current_user: models.User = Depends(get_current_use
     
     return {"status": "not_waiting"}
 
+# Debug endpoint
+@app.get("/debug/waiting-users")
+async def get_waiting_users_debug(current_user: models.User = Depends(get_current_user)):
+    return {
+        "waiting_users": [
+            {
+                "username": u['user'].username,
+                "school": u['school'],
+                "online": is_user_online(u['user'].id)
+            }
+            for u in waiting_users
+        ],
+        "active_chats": [
+            {
+                "chat_id": chat_id,
+                "users": [chat['user1'].username, chat['user2'].username],
+                "school": chat['school']
+            }
+            for chat_id, chat in active_chats.items()
+        ]
+    }
+
 # Online Status Routes
 @app.post("/update-status")
 async def update_online_status(current_user: models.User = Depends(get_current_user)):
@@ -355,6 +403,25 @@ async def get_online_users(
         "online_users": online_count
     }
 
+# เพิ่ม endpoint สำหรับตรวจสอบสถานะระบบ
+@app.get("/system-status")
+async def get_system_status(current_user: models.User = Depends(get_current_user)):
+    return {
+        "waiting_users_count": len(waiting_users),
+        "active_chats_count": len(active_chats),
+        "online_users_count": len(online_users),
+        "current_time": datetime.now().isoformat()
+    }
+
+# เพิ่ม endpoint สำหรับรีเซ็ตการแชท (สำหรับ debug)
+@app.post("/debug/reset-chat")
+async def reset_chat(current_user: models.User = Depends(get_current_user)):
+    # เช็คว่าเป็น admin หรือไม่ (อาจเพิ่มการตรวจสอบเพิ่มเติม)
+    waiting_users.clear()
+    active_chats.clear()
+    return {"status": "reset_complete"}
+
 if __name__ == "__main__":
     import uvicorn
+    print("Starting server...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
