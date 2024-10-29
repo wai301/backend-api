@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from typing import List, Optional
@@ -10,15 +9,11 @@ import jwt
 import os
 import models, schemas
 from database import engine, get_db
-from pydantic import BaseModel, Json
 
 # สร้างฐานข้อมูล
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
-
-# Serve static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS
 app.add_middleware(
@@ -43,25 +38,6 @@ waiting_users = []
 active_chats = {}
 # เก็บข้อมูลผู้ใช้ที่ออนไลน์
 online_users = {}
-
-# Schemas สำหรับ Profile
-class ProfileUpdate(BaseModel):
-    displayName: Optional[str] = None
-    bio: Optional[str] = None
-    interests: List[str] = []
-
-class ProfileStats(BaseModel):
-    chatCount: int = 0
-    friendCount: int = 0
-    activeTime: int = 0
-
-class Profile(BaseModel):
-    displayName: Optional[str]
-    school: str
-    bio: Optional[str]
-    interests: List[str] = []
-    stats: ProfileStats
-    picture_url: Optional[str] = None
 
 # ฟังก์ชันเช็คสถานะออนไลน์
 def update_user_status(user_id: int):
@@ -166,85 +142,26 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     return {"access_token": access_token, "token_type": "bearer"}
 
 # Profile Routes
-@app.get("/profile", response_model=Profile)
-async def get_profile(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
-    
-    if not profile:
-        profile = models.UserProfile(
-            user_id=current_user.id,
-            display_name=current_user.username,
-            interests=[]
-        )
-        db.add(profile)
-        db.commit()
-        db.refresh(profile)
-
+@app.get("/profile", response_model=schemas.Profile)
+async def get_profile(current_user: models.User = Depends(get_current_user)):
     return {
-        "displayName": profile.display_name,
-        "school": current_user.school,
-        "bio": profile.bio,
-        "interests": profile.interests,
-        "stats": {
-            "chatCount": profile.chat_count,
-            "friendCount": profile.friend_count,
-            "activeTime": profile.active_time
-        },
-        "picture_url": profile.picture_url
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "school": current_user.school
     }
 
 @app.post("/profile/update")
-async def update_profile(
-    profile_update: ProfileUpdate,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
-    
-    if not profile:
-        profile = models.UserProfile(user_id=current_user.id)
-        db.add(profile)
-    
-    if profile_update.displayName is not None:
-        profile.display_name = profile_update.displayName
-    if profile_update.bio is not None:
-        profile.bio = profile_update.bio
-    profile.interests = profile_update.interests
-
+async def update_profile(profile_update: schemas.ProfileUpdate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if profile_update.email:
+        db_user = db.query(models.User).filter(models.User.email == profile_update.email).first()
+        if db_user and db_user.id != current_user.id:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        current_user.email = profile_update.email
+    if profile_update.school:
+        current_user.school = profile_update.school
     db.commit()
     return {"status": "success"}
-
-@app.post("/profile/picture")
-async def update_profile_picture(
-    file: UploadFile = File(...),
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    if not file.content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="File must be an image")
-    
-    try:
-        filename = f"user_{current_user.id}_{int(datetime.now().timestamp())}{os.path.splitext(file.filename)[1]}"
-        
-        UPLOAD_DIR = "static/uploads"
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        
-        with open(file_path, "wb+") as file_object:
-            file_object.write(file.file.read())
-        
-        profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
-        if not profile:
-            profile = models.UserProfile(user_id=current_user.id)
-            db.add(profile)
-        
-        profile.picture_url = f"/static/uploads/{filename}"
-        db.commit()
-
-        return {"url": profile.picture_url}
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 # Chat Routes
 @app.post("/start-chat")
@@ -288,11 +205,7 @@ async def start_chat(school: str, current_user: models.User = Depends(get_curren
     return {"status": "waiting"}
 
 @app.post("/send-message/{chat_id}")
-async def send_message(
-    chat_id: str,
-    message: str,
-    current_user: models.User = Depends(get_current_user)
-):
+async def send_message(chat_id: str, message: str, current_user: models.User = Depends(get_current_user)):
     update_user_status(current_user.id)
 
     if chat_id not in active_chats:
@@ -320,10 +233,7 @@ async def send_message(
     }
 
 @app.get("/chat-messages/{chat_id}")
-async def get_messages(
-    chat_id: str,
-    current_user: models.User = Depends(get_current_user)
-):
+async def get_messages(chat_id: str, current_user: models.User = Depends(get_current_user)):
     update_user_status(current_user.id)
 
     if chat_id not in active_chats:
@@ -346,10 +256,7 @@ async def get_messages(
     }
 
 @app.post("/leave-chat/{chat_id}")
-async def leave_chat(
-    chat_id: str,
-    current_user: models.User = Depends(get_current_user)
-):
+async def leave_chat(chat_id: str, current_user: models.User = Depends(get_current_user)):
     if chat_id not in active_chats:
         raise HTTPException(status_code=404, detail="Chat not found")
 
@@ -390,11 +297,7 @@ async def update_online_status(current_user: models.User = Depends(get_current_u
     return {"status": "updated"}
 
 @app.get("/online-users/{school}")
-async def get_online_users(
-    school: str,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
+async def get_online_users(school: str, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     online_count = 0
     users = db.query(models.User).filter(models.User.school == school).all()
     for user in users:
@@ -405,51 +308,6 @@ async def get_online_users(
         "school": school,
         "online_users": online_count
     }
-
-# Report Routes
-@app.post("/report-user/{reported_username}")
-async def report_user(
-    reported_username: str,
-    reason: str,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    reported_user = db.query(models.User).filter(models.User.username == reported_username).first()
-    if not reported_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    report = models.Report(
-        reporter_id=current_user.id,
-        reported_id=reported_user.id,
-        reason=reason,
-        created_at=datetime.now()
-    )
-    db.add(report)
-    db.commit()
-
-    return {"status": "reported"}
-
-# Profile Stats Update Route
-@app.post("/profile/stats/update")
-async def update_stats(
-    chatCount: Optional[int] = None,
-    activeTime: Optional[int] = None,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
-    
-    if not profile:
-        profile = models.UserProfile(user_id=current_user.id)
-        db.add(profile)
-    
-    if chatCount is not None:
-        profile.chat_count = chatCount
-    if activeTime is not None:
-        profile.active_time = activeTime
-    
-    db.commit()
-    return {"status": "success"}
 
 if __name__ == "__main__":
     import uvicorn
