@@ -6,13 +6,16 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    school = Column(String)
-    display_name = Column(String)
-    bio = Column(String)
-    interests = Column(JSON, default=list)  # เปลี่ยนจาก ARRAY เป็น JSON
-    profile_pic = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    is_active = Column(Boolean, default=True)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    school = Column(String(100), nullable=False)
+    display_name = Column(String(50), nullable=True)
+    bio = Column(String(500), nullable=True)
+    interests = Column(JSON, default=list, nullable=True)
+    profile_pic = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    def __repr__(self):
+        return f"<User {self.username}>"
