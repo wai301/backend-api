@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text  # เพิ่ม text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
@@ -24,11 +24,13 @@ def create_db_engine(url, max_retries=5):
                 )
             logger.info(f"Attempt {attempt + 1}: Connecting to {url}")
             
-            # เพิ่ม connect_args สำหรับ timeout
+            # ปรับการตั้งค่า engine
             engine = create_engine(
                 url,
+                pool_pre_ping=True,
+                pool_timeout=30,
                 connect_args={
-                    "connect_timeout": 10,
+                    "connect_timeout": 30,
                     "keepalives": 1,
                     "keepalives_idle": 30,
                     "keepalives_interval": 10,
@@ -38,14 +40,14 @@ def create_db_engine(url, max_retries=5):
             
             # ทดสอบการเชื่อมต่อ
             with engine.connect() as conn:
-                conn.execute("SELECT 1")  # ทดสอบ connection จริงๆ
+                conn.execute(text("SELECT 1"))  # ใช้ text() function
             logger.info("Database connection successful!")
             return engine
             
         except Exception as e:
             logger.error(f"Connection attempt {attempt + 1} failed: {str(e)}")
             if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # exponential backoff
+                wait_time = 2 ** attempt
                 logger.info(f"Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
             else:
