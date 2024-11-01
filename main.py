@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes import auth, chat, profile, system
 from database import engine
 import models
-from config import settings
 from logging_config import logger
 
 # Create tables
@@ -14,10 +13,15 @@ app = FastAPI()
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=[
+        "https://matchfortalk.web.app",
+        "https://matchfortalk.firebaseapp.com",
+        "http://localhost:3000",
+        "http://localhost:5173"
+    ],
     allow_credentials=True,
-    allow_methods=settings.CORS_METHODS,
-    allow_headers=settings.CORS_HEADERS,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include routers
