@@ -8,7 +8,13 @@ from logging_config import logger
 # Create tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+# เพิ่ม root_path="/api"
+app = FastAPI(
+    title="School Chat API",
+    description="API for school chat application",
+    version="1.0.0",
+    root_path="/api"
+)
 
 # CORS
 app.add_middleware(
@@ -32,9 +38,20 @@ app.include_router(system.router, prefix="/system", tags=["System"])
 
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "Server is running"}
+    return {
+        "status": "ok", 
+        "message": "School Chat API Server is running",
+        "version": "1.0.0",
+        "documentation": "/docs"
+    }
 
 if __name__ == "__main__":
     import uvicorn
     logger.info("Starting server...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=8000,
+        log_level="info",
+        reload=True  # ใช้สำหรับ development
+    )
