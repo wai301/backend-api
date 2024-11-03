@@ -1,14 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes import auth, chat, profile, system
-from database import engine
-import models
+from firebase_config import db  # เปลี่ยนเป็น import firebase
 from logging_config import logger
 
-# Create tables
-models.Base.metadata.create_all(bind=engine)
-
-# เพิ่ม root_path="/api"
+# Initialize FastAPI
 app = FastAPI(
     title="School Chat API",
     description="API for school chat application",
@@ -30,11 +26,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(auth.router, tags=["Authentication"])
-app.include_router(chat.router, prefix="/chat", tags=["Chat"])
-app.include_router(profile.router, prefix="/profile", tags=["Profile"])
-app.include_router(system.router, prefix="/system", tags=["System"])
+# Startup Event
+@app.on_event("startup")
+async def startup_event():
+    """Check database connection on startup"""
+    try:
+        # เช็คการเชื่อมต่อ Firebase
+        db.collection('test').document('test').set({
+            'test': 'Connection successful'
+        })
+        logger.info("Firebase connection successful")
+    except Exception as e:
+        logger.error(f"Firebase connection failed: {e}")
+        raise
+
+# Include routers with prefix
+app.include_router(
+    auth.router,
+    prefix="/api",
+    tags=["Authentication"]
+)
+app.include_router(
+    chat.router,
+    prefix="/api/chat",
+    tags=["Chat"]
+)
+app.include_router(
+    profile.router,
+    prefix="/api/profile",
+    tags=["Profile"]
+)
+app.include_router(
+    system.router,
+    prefix="/api/system",
+    tags=["System"]
+)
 
 @app.get("/")
 def read_root():
@@ -53,5 +79,5 @@ if __name__ == "__main__":
         host="0.0.0.0", 
         port=8000,
         log_level="info",
-        reload=True  # ใช้สำหรับ development
+        reload=True
     )
