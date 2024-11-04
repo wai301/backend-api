@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 from typing import Annotated
-from schemas import UserCreate, User, Token
+from schemas import ProfileCreate, Profile, Token  # เปลี่ยนจาก UserCreate, User เป็น ProfileCreate, Profile
 from utils.auth import (
     create_access_token, 
     get_password_hash, 
@@ -16,8 +16,8 @@ from logging_config import logger
 
 router = APIRouter()
 
-@router.post("/register", response_model=User)
-async def register(user: UserCreate):
+@router.post("/register", response_model=Profile)
+async def register(user: ProfileCreate):  # เปลี่ยนเป็น ProfileCreate
     logger.info(f"Received registration request: {user.username}")
     
     try:
