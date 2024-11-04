@@ -7,11 +7,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
-
     # CORS
-    CORS_ORIGINS: list = ["*"]
+    CORS_ORIGINS: list = [
+        "https://matchfortalk.web.app",
+        "https://matchfortalk.firebaseapp.com",
+        "http://localhost:3000",
+        "http://localhost:5173"
+    ]
     CORS_METHODS: list = ["*"]
     CORS_HEADERS: list = ["*"]
 
