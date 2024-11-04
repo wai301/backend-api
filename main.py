@@ -8,8 +8,8 @@ from logging_config import logger
 app = FastAPI(
     title="School Chat API",
     description="API for school chat application",
-    version="1.0.0",
-    root_path="/api"
+    version="1.0.0"
+    # ลบ root_path="/api"
 )
 
 # CORS
