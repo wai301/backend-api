@@ -16,9 +16,10 @@ from logging_config import logger
 
 router = APIRouter()
 
-@router.post("/register", response_model=Profile)
-async def register(user: ProfileCreate):  # เปลี่ยนเป็น ProfileCreate
-    logger.info(f"Received registration request: {user.username}")
+router = APIRouter()
+
+@router.post("/register", response_model=Profile)  # เปลี่ยนจาก "/api/register" เป็น "/register"
+async def register(user: ProfileCreate):
     
     try:
         # เช็คว่ามี username ซ้ำไหม
@@ -66,7 +67,7 @@ async def register(user: ProfileCreate):  # เปลี่ยนเป็น Pr
         logger.error(f"Error during registration: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/token", response_model=Token)
+@router.post("/token", response_model=Token)  # เปลี่ยนจาก "/api/token" เป็น "/token"
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     try:
         # ดึงข้อมูลผู้ใช้จาก username
@@ -117,3 +118,5 @@ async def logout(current_user: Annotated[str, Depends(get_current_user)]):
     except Exception as e:
         logger.error(f"Error during logout: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+    
+    
