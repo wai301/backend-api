@@ -22,3 +22,8 @@ Thumbs.db
 
 # Project specific
 **/__pycache__/
+
+# Credentials
+serviceAccountKey.json
+*.key
+*.pem
