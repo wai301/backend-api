@@ -1,16 +1,29 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
 from datetime import datetime
-from database import get_db
 from utils.auth import get_current_user
 from utils.chat import chat_manager
-import models
 from logging_config import logger
+from firebase_config import db
 
 router = APIRouter()
 
+@router.post("/update-status")
+async def update_status(current_user: Annotated[str, Depends(get_current_user)]):
+    try:
+        # เช็คสถานะของผู้ใช้
+        user_status = await chat_manager.get_user_status(current_user)
+        logger.info(f"Status update for {current_user}: {user_status}")
+        return {
+            "status": "online" if user_status else "offline",
+            "last_updated": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in update_status: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.get("/status")
-async def get_system_status(current_user: models.User = Depends(get_current_user)):
+async def get_system_status(current_user: Annotated[str, Depends(get_current_user)]):
     try:
         return {
             "status": "healthy",
@@ -27,12 +40,11 @@ async def get_system_status(current_user: models.User = Depends(get_current_user
         }
 
 @router.get("/stats")
-async def get_system_stats(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
+async def get_system_stats(current_user: Annotated[str, Depends(get_current_user)]):
     try:
-        total_users = db.query(models.User).count()
+        # ดึงข้อมูลจาก Firebase
+        users_ref = db.collection('users')
+        total_users = len(list(users_ref.stream()))
         active_users = len(chat_manager.online_users)
         
         return {
