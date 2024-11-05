@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 from typing import Annotated
-from schemas import ProfileCreate, Profile, Token  # เปลี่ยนจาก UserCreate, User เป็น ProfileCreate, Profile
+from schemas import ProfileCreate, Profile, Token
 from utils.auth import (
     create_access_token, 
     get_password_hash, 
@@ -14,13 +14,12 @@ from utils.chat import chat_manager
 from config import settings
 from logging_config import logger
 
+# ประกาศ router แค่ครั้งเดียว
 router = APIRouter()
 
-router = APIRouter()
-
-@router.post("/register", response_model=Profile)  # เปลี่ยนจาก "/api/register" เป็น "/register"
+@router.post("/register", response_model=Profile)
 async def register(user: ProfileCreate):
-    
+    logger.info(f"Received registration request: {user.username}")
     try:
         # เช็คว่ามี username ซ้ำไหม
         existing_user = await UserModel.get_by_username(user.username)
@@ -67,8 +66,9 @@ async def register(user: ProfileCreate):
         logger.error(f"Error during registration: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/token", response_model=Token)  # เปลี่ยนจาก "/api/token" เป็น "/token"
+@router.post("/token", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    logger.info(f"Login attempt for user: {form_data.username}")
     try:
         # ดึงข้อมูลผู้ใช้จาก username
         user = await UserModel.get_by_username(form_data.username)
@@ -110,6 +110,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @router.post("/logout")
 async def logout(current_user: Annotated[str, Depends(get_current_user)]):
+    logger.info(f"Logout request from user: {current_user}")
     try:
         # อัพเดทสถานะออฟไลน์
         await chat_manager.remove_user_status(current_user)
@@ -118,5 +119,3 @@ async def logout(current_user: Annotated[str, Depends(get_current_user)]):
     except Exception as e:
         logger.error(f"Error during logout: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-    
-    
