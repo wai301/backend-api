@@ -9,13 +9,11 @@ from firebase_config import db
 router = APIRouter()
 
 @router.post("/update-status")
-async def update_status(current_user: Annotated[str, Depends(get_current_user)]):
+@router.options("/update-status")  # เพิ่ม options method
+async def update_status():  # ลบ current_user dependency
     try:
-        # เช็คสถานะของผู้ใช้
-        user_status = await chat_manager.get_user_status(current_user)
-        logger.info(f"Status update for {current_user}: {user_status}")
         return {
-            "status": "online" if user_status else "offline",
+            "status": "online",
             "last_updated": datetime.now().isoformat()
         }
     except Exception as e:
@@ -34,27 +32,6 @@ async def get_system_status(current_user: Annotated[str, Depends(get_current_use
         }
     except Exception as e:
         logger.error(f"Error getting system status: {str(e)}")
-        return {
-            "status": "error",
-            "detail": str(e)
-        }
-
-@router.get("/stats")
-async def get_system_stats(current_user: Annotated[str, Depends(get_current_user)]):
-    try:
-        # ดึงข้อมูลจาก Firebase
-        users_ref = db.collection('users')
-        total_users = len(list(users_ref.stream()))
-        active_users = len(chat_manager.online_users)
-        
-        return {
-            "total_users": total_users,
-            "active_users": active_users,
-            "active_chats": len(chat_manager.active_chats),
-            "waiting_users": len(chat_manager.waiting_users)
-        }
-    except Exception as e:
-        logger.error(f"Error getting system stats: {str(e)}")
         return {
             "status": "error",
             "detail": str(e)

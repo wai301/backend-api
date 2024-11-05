@@ -9,7 +9,7 @@ app = FastAPI(
     title="School Chat API",
     description="API for school chat application",
     version="1.0.0",
-    root_path="/api"  # เพิ่มตรงนี้
+    root_path="/api"  # เพิ่มตรงนี้เพื่อให้ทุก route มี /api prefix
 )
 
 # CORS
@@ -39,24 +39,24 @@ async def startup_event():
         logger.error(f"Firebase connection failed: {e}")
         raise
 
-# Include routers WITHOUT /api prefix
+# Include routers - เมื่อใช้ root_path="/api" แล้วไม่ต้องใส่ /api ใน prefix
 app.include_router(
     auth.router,
     tags=["Authentication"]
 )
 app.include_router(
     chat.router,
-    prefix="/chat",  # ลบ /api ออก
+    prefix="/chat",
     tags=["Chat"]
 )
 app.include_router(
     profile.router,
-    prefix="/profile",  # ลบ /api ออก
+    prefix="/profile",
     tags=["Profile"]
 )
 app.include_router(
     system.router,
-    prefix="/system",  # ลบ /api ออก
+    prefix="/system",
     tags=["System"]
 )
 
@@ -79,8 +79,3 @@ if __name__ == "__main__":
         log_level="info",
         reload=True
     )
-    app.include_router(
-    auth.router,
-    prefix="/api",  # คงไว้แบบนี้
-    tags=["Authentication"]
-)
