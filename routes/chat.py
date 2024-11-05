@@ -2,67 +2,94 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from datetime import datetime
 from models import User as UserModel
-from schemas import ChatMessage, ChatResponse, MessageResponse
+from schemas import ChatMessage, ChatResponse
 from utils.auth import get_current_user
 from utils.chat import chat_manager
 from logging_config import logger
 
 router = APIRouter()
 
-@router.post("/send", response_model=MessageResponse)
-async def send_message(
+@router.post("/start-chat")
+async def start_chat(current_user: Annotated[str, Depends(get_current_user)]):
+    try:
+        result = await chat_manager.start_chat(current_user)
+        logger.info(f"Chat started for user: {current_user}")
+        return result
+    except Exception as e:
+        logger.error(f"Error starting chat: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/waiting-status")
+async def check_waiting_status(current_user: Annotated[str, Depends(get_current_user)]):
+    try:
+        status = await chat_manager.get_waiting_status(current_user)
+        return status
+    except Exception as e:
+        logger.error(f"Error checking waiting status: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/chat-messages/{chat_id}")
+async def get_chat_messages(
+    chat_id: str,
+    current_user: Annotated[str, Depends(get_current_user)]
+):
+    try:
+        messages = await chat_manager.get_messages(chat_id, current_user)
+        return messages
+    except Exception as e:
+        logger.error(f"Error getting messages: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/send-message/{chat_id}")
+async def send_chat_message(
+    chat_id: str,
     message: ChatMessage,
     current_user: Annotated[str, Depends(get_current_user)]
 ):
     try:
-        result = await chat_manager.send_message(current_user, message.content)
-        logger.info(f"Message sent by {current_user}")
+        result = await chat_manager.send_message(chat_id, current_user, message.content)
         return result
     except Exception as e:
-        logger.error(f"Error in send_message: {str(e)}")
+        logger.error(f"Error sending message: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/match", response_model=ChatResponse)
-async def match_chat(current_user: Annotated[str, Depends(get_current_user)]):
+@router.post("/leave-chat/{chat_id}")
+async def leave_chat(
+    chat_id: str,
+    current_user: Annotated[str, Depends(get_current_user)]
+):
     try:
-        match_result = await chat_manager.find_match(current_user)
-        logger.info(f"Match result for {current_user}: {match_result}")
-        return match_result
+        await chat_manager.leave_chat(chat_id, current_user)
+        return {"message": "Successfully left chat"}
     except Exception as e:
-        logger.error(f"Error in match_chat: {str(e)}")
+        logger.error(f"Error leaving chat: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/end")
-async def end_chat(current_user: Annotated[str, Depends(get_current_user)]):
+@router.get("/online-users/{school}")
+async def get_online_users(
+    school: str,
+    current_user: Annotated[str, Depends(get_current_user)]
+):
     try:
-        await chat_manager.end_chat(current_user)
-        logger.info(f"Chat ended by {current_user}")
-        return {"message": "Chat ended successfully"}
+        count = await chat_manager.get_online_users_count(school)
+        return {"online_users": count}
     except Exception as e:
-        logger.error(f"Error in end_chat: {str(e)}")
+        logger.error(f"Error getting online users: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/system/update-status")
-async def update_status(current_user: Annotated[str, Depends(get_current_user)]):
+@router.post("/submit-rating")
+async def submit_chat_rating(
+    rating_data: dict,
+    current_user: Annotated[str, Depends(get_current_user)]
+):
     try:
-        # เช็คสถานะของผู้ใช้
-        user_status = await chat_manager.get_user_status(current_user)
-        logger.info(f"Status update for {current_user}: {user_status}")
-        return {
-            "status": "online" if user_status else "offline",
-            "last_updated": datetime.now().isoformat()
-        }
+        await chat_manager.submit_rating(
+            current_user,
+            rating_data["chat_id"],
+            rating_data["rating"],
+            rating_data.get("comment", "")
+        )
+        return {"message": "Rating submitted successfully"}
     except Exception as e:
-        logger.error(f"Error in update_status: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@router.post("/start-chat")
-async def start_chat(current_user: Annotated[str, Depends(get_current_user)]):
-    try:
-        # เริ่มการแชท
-        chat_result = await chat_manager.start_chat(current_user)
-        logger.info(f"Chat started by {current_user}")
-        return chat_result
-    except Exception as e:
-        logger.error(f"Error in start_chat: {str(e)}")
+        logger.error(f"Error submitting rating: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
