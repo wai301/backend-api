@@ -4,26 +4,27 @@ from routes import auth, chat, profile, system
 from firebase_config import db
 from logging_config import logger
 
-# Initialize FastAPI
 app = FastAPI(
     title="School Chat API",
     description="API for school chat application",
-    version="1.0.0",
-    root_path="/api"  # เพิ่มตรงนี้เพื่อให้ทุก route มี /api prefix
+    version="1.0.0"
 )
 
-# CORS
+# อัพเดท CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://matchfortalk.web.app",
         "https://matchfortalk.firebaseapp.com",
         "http://localhost:3000",
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "*"  # อนุญาตทุก origin ชั่วคราว
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600
 )
 
 # Startup Event
@@ -39,7 +40,7 @@ async def startup_event():
         logger.error(f"Firebase connection failed: {e}")
         raise
 
-# Include routers - เมื่อใช้ root_path="/api" แล้วไม่ต้องใส่ /api ใน prefix
+# Include routers
 app.include_router(
     auth.router,
     tags=["Authentication"]

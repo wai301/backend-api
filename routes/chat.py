@@ -9,6 +9,10 @@ from logging_config import logger
 
 router = APIRouter()
 
+@router.options("/start-chat")
+async def options_start_chat():
+    return {"message": "OK"}
+
 @router.post("/start-chat")
 async def start_chat(current_user: Annotated[str, Depends(get_current_user)]):
     try:
