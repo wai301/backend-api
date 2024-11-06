@@ -3,17 +3,14 @@ from schemas import ProfileUpdate, Profile
 from utils.auth import get_current_user
 from models import User
 from models.base import FirebaseError, NotFoundError
-from typing import Dict, Any, List  # เพิ่ม List ตรงนี้
+from typing import Dict, Any, List
 from logging_config import logger
 
 router = APIRouter()
 
-@router.post("/profile/interests")
-async def update_interests(
-    interests: List[str],  # ตอนนี้จะไม่ขึ้นเหลืองแล้ว
-    current_user: Dict[str, Any] = Depends(get_current_user)
-):
-    """Update user interests"""
+@router.get("/", response_model=Profile)
+async def get_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get user profile"""
     try:
         user = await User.get_by_username(current_user['username'])
         if not user:
@@ -32,7 +29,7 @@ async def update_interests(
             detail=str(e)
         )
 
-@router.post("/profile/update", response_model=Profile)
+@router.post("/update", response_model=Profile)
 async def update_profile(
     profile_update: ProfileUpdate,
     current_user: Dict[str, Any] = Depends(get_current_user)
@@ -80,8 +77,7 @@ async def update_profile(
             detail=str(e)
         )
 
-# เพิ่ม endpoint สำหรับอัพเดทรูปโปรไฟล์
-@router.post("/profile/picture")
+@router.post("/picture")
 async def update_profile_picture(
     profile_pic: str,  # Base64 encoded image
     current_user: Dict[str, Any] = Depends(get_current_user)
@@ -106,8 +102,7 @@ async def update_profile_picture(
             detail=str(e)
         )
 
-# เพิ่ม endpoint สำหรับอัพเดทความสนใจ
-@router.post("/profile/interests")
+@router.post("/interests")
 async def update_interests(
     interests: List[str],
     current_user: Dict[str, Any] = Depends(get_current_user)
