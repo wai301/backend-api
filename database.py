@@ -1,151 +1,80 @@
-from sqlalchemy import create_engine, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import SQLAlchemyError, OperationalError
-import os
-import time
 import logging
-from urllib.parse import urlparse
+from firebase_admin import firestore
+from firebase_config import db
 
 # ตั้งค่า logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# ใช้ DATABASE_URL จาก environment variable
-DATABASE_URL = os.getenv("DATABASE_URL")
-logger.info(f"Initial DATABASE_URL: {DATABASE_URL}")
-
-def validate_db_url(url):
-    """ตรวจสอบและแก้ไข URL ให้ถูกต้อง"""
-    if not url:
-        return None
-        
-    # แก้ไข scheme
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-        logger.info("Modified URL to use postgresql:// scheme")
-    
-    # แก้ไข host
-    if "postgres.railway.internal" in url:
-        url = url.replace(
-            "postgres.railway.internal",
-            "monorail.proxy.rlwy.net"
-        )
-        logger.info("Modified internal host to proxy host")
-    
-    # ตรวจสอบรูปแบบ URL
+def initialize_db():
+    """
+    Initialize Firebase connection
+    Returns Firebase db instance if successful
+    """
     try:
-        result = urlparse(url)
-        if not all([result.scheme, result.netloc]):
-            logger.error("Invalid database URL format")
-            return None
+        logger.info("Starting Firebase initialization...")
+        
+        # Test connection by writing to a test collection
+        test_ref = db.collection('system').document('connection_test')
+        test_ref.set({
+            'status': 'connected',
+            'timestamp': firestore.SERVER_TIMESTAMP,
+            'environment': 'production'
+        })
+        
+        logger.info("✅ Firebase initialized successfully!")
+        return db
+        
     except Exception as e:
-        logger.error(f"Error parsing database URL: {e}")
-        return None
-        
-    return url
-
-def create_db_engine(url, max_retries=5):
-    """สร้าง database engine พร้อม retry logic"""
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Attempt {attempt + 1}: Connecting to database...")
-            
-            # ปรับการตั้งค่า engine
-            engine = create_engine(
-                url,
-                pool_pre_ping=True,
-                pool_timeout=30,
-                pool_size=5,
-                max_overflow=10,
-                connect_args={
-                    "connect_timeout": 30,
-                    "keepalives": 1,
-                    "keepalives_idle": 30,
-                    "keepalives_interval": 10,
-                    "keepalives_count": 5
-                }
-            )
-            
-            # ทดสอบการเชื่อมต่อ
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-                conn.execute(text("SET TIME ZONE 'Asia/Bangkok'"))
-            logger.info("Database connection successful!")
-            return engine
-            
-        except OperationalError as e:
-            logger.error(f"Operational error on attempt {attempt + 1}: {str(e)}")
-            if attempt < max_retries - 1:
-                wait_time = min(2 ** attempt, 30)  # Max wait 30 seconds
-                logger.info(f"Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
-                
-        except SQLAlchemyError as e:
-            logger.error(f"SQLAlchemy error on attempt {attempt + 1}: {str(e)}")
-            break
-            
-        except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
-            break
-    
-    # Fallback to SQLite
-    logger.warning("Falling back to SQLite database")
-    sqlite_url = "sqlite:///./sql_app.db"
-    return create_engine(
-        sqlite_url, 
-        connect_args={"check_same_thread": False}
-    )
-
-# Initialize database connection
-try:
-    # Validate and correct DATABASE_URL
-    valid_url = validate_db_url(DATABASE_URL)
-    
-    if valid_url:
-        engine = create_db_engine(valid_url)
-        logger.info("Using PostgreSQL database")
-    else:
-        # Fallback to SQLite if no valid URL
-        logger.warning("No valid DATABASE_URL found, using SQLite")
-        engine = create_engine(
-            "sqlite:///./sql_app.db",
-            connect_args={"check_same_thread": False}
-        )
-        
-    # Test connection one last time
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
-    
-except Exception as e:
-    logger.error(f"Fatal error initializing database: {e}")
-    raise
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+        logger.error(f"❌ Firebase initialization failed: {str(e)}")
+        raise
 
 def get_db():
-    """Database dependency"""
-    db = SessionLocal()
+    """
+    Database dependency injection for FastAPI
+    Returns Firebase db instance
+    """
     try:
-        yield db
+        return db
     except Exception as e:
-        logger.error(f"Database session error: {e}")
+        logger.error(f"Error accessing Firebase instance: {str(e)}")
         raise
-    finally:
-        db.close()
 
-# Create test connection on startup
 def test_db_connection():
+    """
+    Test database connection on startup
+    Raises exception if connection fails
+    """
     try:
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        logger.info("Initial database connection test successful")
+        # Write test document
+        test_ref = db.collection('system').document('startup_test')
+        test_ref.set({
+            'status': 'online',
+            'timestamp': firestore.SERVER_TIMESTAMP,
+            'message': 'System startup test successful'
+        })
+        
+        # Read test document
+        test_doc = test_ref.get()
+        if test_doc.exists:
+            logger.info("✅ Database connection test passed")
+        else:
+            raise Exception("Test document not found")
+            
     except Exception as e:
-        logger.error(f"Initial database connection test failed: {e}")
+        logger.error(f"❌ Database connection test failed: {str(e)}")
         raise
-    finally:
-        db.close()
 
-# Run test connection
-test_db_connection()
+# Initialize database on module import
+try:
+    db = initialize_db()
+    test_db_connection()
+except Exception as e:
+    logger.critical(f"❌ FATAL: Database initialization failed: {str(e)}")
+    raise
+
+# Export database instance
+firebase_db = db
