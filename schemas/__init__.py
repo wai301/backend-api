@@ -1,6 +1,16 @@
 from .auth import Token, TokenData
-from .chat import ChatMessage, ChatPartner, ChatResponse, MessageResponse
-from .user import ProfileBase, ProfileCreate, Profile, ProfileUpdate
+from .chat import (
+    ChatMessage, 
+    ChatPartner, 
+    ChatResponse, 
+    MessageResponse
+)
+from .user import (
+    ProfileBase,
+    ProfileCreate,
+    Profile,
+    ProfileUpdate
+)
 
 __all__ = [
     # Auth
